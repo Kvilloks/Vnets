@@ -149,7 +149,13 @@ for idx in $(seq 0 $((count_v - 1))); do
   if ! iptables -C FORWARD -s "${subnet}" -d 192.168.0.10 -j ACCEPT >/dev/null 2>&1; then
     iptables -I FORWARD -s "${subnet}" -d 192.168.0.10 -j ACCEPT
   fi
-
+    # 6. РАЗРЕШАЕМ доступ к самому IP Proxmox (для Docker портов)
+  if ! iptables -C FORWARD -s "${subnet}" -d 192.168.0.113 -j ACCEPT >/dev/null 2>&1; then
+    iptables -I FORWARD -s "${subnet}" -d 192.168.0.113 -j ACCEPT
+  fi
+  if ! iptables -C INPUT -s "${subnet}" -d 192.168.0.113 -j ACCEPT >/dev/null 2>&1; then
+    iptables -I INPUT -s "${subnet}" -d 192.168.0.113 -j ACCEPT
+  fi
 done
 
 # --- commit (apply) ---
