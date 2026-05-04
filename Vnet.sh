@@ -44,6 +44,16 @@ done
 # --- checks ---
 if [[ $EUID -ne 0 ]]; then echo "Запусти от root." >&2; exit 1; fi
 command -v pvesh >/dev/null 2>&1 || { echo "Не найден pvesh." >&2; exit 1; }
+
+# Проверка и установка dnsmasq для работы DHCP в SDN
+if ! dpkg -s dnsmasq >/dev/null 2>&1; then
+  echo "Пакет 'dnsmasq' не найден (нужен для DHCP). Устанавливаем..."
+  apt-get update >/dev/null 2>&1 || true
+  apt-get install -y dnsmasq >/dev/null 2>&1
+  systemctl disable --now dnsmasq >/dev/null 2>&1 || true
+  echo "'dnsmasq' успешно установлен и настроен."
+fi
+
 [[ -n "$VNET_RANGE" && -n "$OCTET_RANGE" ]] || { echo "Нужно --vnet A-B и --octet C-D."; usage; exit 1; }
 
 if [[ ! "$VNET_RANGE" =~ ^([0-9]+)-([0-9]+)$ ]]; then echo "Неверный формат --vnet (A-B)." >&2; exit 1; fi
