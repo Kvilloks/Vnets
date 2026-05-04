@@ -123,22 +123,31 @@ for idx in $(seq 0 $((count_v - 1))); do
     echo "Внимание: не удалось ни создать, ни обновить подсеть ${subnet}." >&2
   fi
 
-  # 3) Настройка Iptables (Интернет ЕСТЬ, но ВМ друг друга НЕ ВИДЯТ)
+  # 3) Настройка Iptables (Интернет + Исключения + Изоляция)
   
-  # Разрешаем ВХОДЯЩИЙ трафик (ответы из интернета)
+  # 1. Разрешаем ВХОДЯЩИЙ трафик (ответы из интернета и серверов)
   if ! iptables -C FORWARD -d "${subnet}" -j ACCEPT >/dev/null 2>&1; then
     iptables -I FORWARD -d "${subnet}" -j ACCEPT
   fi
 
-  # Разрешаем ИСХОДЯЩИЙ трафик (запросы в интернет)
+  # 2. Разрешаем ИСХОДЯЩИЙ трафик (запросы в интернет)
   if ! iptables -C FORWARD -s "${subnet}" -j ACCEPT >/dev/null 2>&1; then
     iptables -I FORWARD -s "${subnet}" -j ACCEPT
   fi
 
-  # ЗАПРЕЩАЕМ ВМ обращаться в соседние локальные сети (Например: к другим 192.168.X.X)
-  # Это правило встане�� ВЫШЕ разрешающего, поэтому сработает первым!
+  # 3. БЛОКИРУЕМ доступ ко всей локальной сети (встанет выше пункта 2)
   if ! iptables -C FORWARD -s "${subnet}" -d "${PREFIX}.0.0/16" -j DROP >/dev/null 2>&1; then
     iptables -I FORWARD -s "${subnet}" -d "${PREFIX}.0.0/16" -j DROP
+  fi
+
+  # 4. РАЗРЕШАЕМ доступ к шаре 192.168.0.209 (встанет выше пункта 3)
+  if ! iptables -C FORWARD -s "${subnet}" -d 192.168.0.209 -j ACCEPT >/dev/null 2>&1; then
+    iptables -I FORWARD -s "${subnet}" -d 192.168.0.209 -j ACCEPT
+  fi
+
+  # 5. РАЗРЕШАЕМ доступ к серверу 192.168.0.10 (встанет на самый верх, выше пункта 4)
+  if ! iptables -C FORWARD -s "${subnet}" -d 192.168.0.10 -j ACCEPT >/dev/null 2>&1; then
+    iptables -I FORWARD -s "${subnet}" -d 192.168.0.10 -j ACCEPT
   fi
 
 done
