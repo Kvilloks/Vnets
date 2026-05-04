@@ -102,45 +102,54 @@ for idx in $(seq 0 $((count_v - 1))); do
   fi
 
   # 2) Subnet upsert
-  # Сначала пробуем UPDATE по пути с URL-кодированным CIDR
   if pvesh set "/cluster/sdn/vnets/${vnet}/subnets/${cidr_enc}" \
       --gateway "${gw}" \
       --snat "${SNAT}" \
       --dhcp-range "${dh_kv}" >/dev/null 2>&1; then
     echo "Обновлена подсеть ${subnet}."
-    continue
-  fi
-
-  # Если update не удался — пробуем CREATE (если уже есть, create вернёт ошибку; тогда ещё раз попробуем set и продолжим)
-  if pvesh create "/cluster/sdn/vnets/${vnet}/subnets" \
+  elif pvesh create "/cluster/sdn/vnets/${vnet}/subnets" \
       --type subnet \
       --subnet "${subnet}" \
       --gateway "${gw}" \
       --snat "${SNAT}" \
       --dhcp-range "${dh_kv}" >/dev/null 2>&1; then
     echo "Добавлена подсеть ${subnet}."
-    continue
-  fi
-
-  # Последняя попытка — повторный set (на случай гонок/уже существующей подсети)
-  if pvesh set "/cluster/sdn/vnets/${vnet}/subnets/${cidr_enc}" \
+  elif pvesh set "/cluster/sdn/vnets/${vnet}/subnets/${cidr_enc}" \
       --gateway "${gw}" \
       --snat "${SNAT}" \
       --dhcp-range "${dh_kv}" >/dev/null 2>&1; then
     echo "Обновлена подсеть ${subnet} (второй заход)."
   else
-    echo "Внимание: не удалось ни создать, ни обновить подсеть ${subnet} для ${vnet}. Продолжаю." >&2
+    echo "Внимание: не удалось ни создать, ни обновить подсеть ${subnet}." >&2
   fi
+
+  # 3) Настройка Iptables (Интернет ЕСТЬ, но ВМ друг друга НЕ ВИДЯТ)
+  
+  # Разрешаем ВХОДЯЩИЙ трафик (ответы из интернета)
+  if ! iptables -C FORWARD -d "${subnet}" -j ACCEPT >/dev/null 2>&1; then
+    iptables -I FORWARD -d "${subnet}" -j ACCEPT
+  fi
+
+  # Разрешаем ИСХОДЯЩИЙ трафик (запросы в интернет)
+  if ! iptables -C FORWARD -s "${subnet}" -j ACCEPT >/dev/null 2>&1; then
+    iptables -I FORWARD -s "${subnet}" -j ACCEPT
+  fi
+
+  # ЗАПРЕЩАЕМ ВМ обращаться в соседние локальные сети (Например: к другим 192.168.X.X)
+  # Это правило встане�� ВЫШЕ разрешающего, поэтому сработает первым!
+  if ! iptables -C FORWARD -s "${subnet}" -d "${PREFIX}.0.0/16" -j DROP >/dev/null 2>&1; then
+    iptables -I FORWARD -s "${subnet}" -d "${PREFIX}.0.0/16" -j DROP
+  fi
+
 done
 
 # --- commit (apply) ---
 if [[ "$DO_COMMIT" -eq 1 ]]; then
   echo "Применение конфигурации SDN..."
-  # В Proxmox API применение SDN делается через PUT (set) запрос к /cluster/sdn
   if pvesh set /cluster/sdn >/dev/null 2>&1; then
     echo "Конфигурация SDN успешно применена."
   else
-    echo "Внимание: не удалось применить конфигурацию SDN (pvesh set /cluster/sdn)." >&2
+    echo "Внимание: не удалось применить конфигурацию SDN." >&2
   fi
 else
   echo "Пропуск применения конфигурации SDN (--no-commit)."
